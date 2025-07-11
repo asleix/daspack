@@ -1,0 +1,4 @@
+# .cargo/config.toml
+[env]
+HDF5_DIR = { value = "${CONDA_PREFIX}" }
+
