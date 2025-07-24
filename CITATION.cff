@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+title: DASPack
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Aleix
+    family-names: Segui
+    orcid: 'https://orcid.org/0009-0005-1266-1257'
+repository-code: 'https://github.com/asleix/daspack'
+license: BSD-3-Clause
+identifiers:
+  - type: doi
+    value: 10.48550/arXiv.2507.16390
