@@ -8,7 +8,7 @@ mod wavelets;
 mod prediction;
 pub mod entropy;
 mod blocks;
-pub use crate::entropy::{compress_residuals, decompress_residuals};
+pub use crate::entropy::{compress_residuals_rice, decompress_residuals_rice};
 pub use crate::blocks::{compress_lossless, decompress_lossless, CompressParams};
 
 pub use crate::entropy::exp_golomb::encode_k_expgolomb_list;

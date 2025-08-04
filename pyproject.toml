@@ -1,0 +1,44 @@
+[project]
+name = "daspack"
+classifiers = [
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Archiving :: Compression",
+  "Intended Audience :: Science/Research",
+]
+version = "2025.0.0"
+description = "DASPack: Controlled data compression for Distributed Acoustic Sensing"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+  {name = "Aleix Segui"},
+]
+license = {file = "LICENSE"}
+keywords = ["Distributed Acoustic Sensing", "compression", "Data Compression"]
+maintainers = [
+  {name = "Aleix Segui"},
+]
+dependencies = [
+"h5py>=3.0.0"
+]
+
+
+[project.urls]
+homepage = "https://aleixsegui.dev/"
+repository = "https://github.com/asleix/daspack"
+
+[build-system]
+build-backend = "maturin"
+requires = ["maturin>=1.7.1,<2.0"]
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "daspack.compute"
+python-source = "."
+python-packages = ["daspack"]

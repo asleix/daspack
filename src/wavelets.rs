@@ -1,4 +1,4 @@
-use numpy::ndarray::{
+use ndarray::{
     Array1, Array2, ArrayViewMut1, Axis, s
 };
 

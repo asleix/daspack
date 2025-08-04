@@ -1,6 +1,6 @@
 // prediction.rs
 
-use numpy::ndarray::{Array2, s};
+use ndarray::{Array2, s};
 
 use crate::wavelets;
 
@@ -308,7 +308,7 @@ impl MultiBlockPredictor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use numpy::ndarray::array;
+    use ndarray::array;
 
     #[test]
     fn test_prediction_reconstruction() {

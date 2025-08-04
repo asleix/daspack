@@ -5,14 +5,12 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use constriction::stream::{stack::DefaultAnsCoder, Decode};
 use constriction::{CoderError, DefaultEncoderFrontendError};
 use constriction::stream::queue::DecoderFrontendError;
-use numpy::ndarray::{Array2, Axis};
+use ndarray::{Array2, Axis};
 use std::convert::Infallible;
 use std::io::{Cursor, Read};
 
-pub mod exp_golomb;
-mod fast_models;
-mod mu_law_quant;
-mod ans_tables;
+use crate::entropy::exp_golomb;
+
 
 use crate::entropy::fast_models::{FastGaussian, FastLaplace};
 use crate::entropy::ans_tables::{gaussian_nz_bound, laplace_nz_bound};
@@ -38,7 +36,7 @@ pub enum CodecError {
     #[error("Row too large: {0} > 2²² Bytes")]
     RowTooLarge(usize),
     #[error("Wrong Exp-Gol encoding shape")]
-    ExpGolShape(#[from] numpy::ndarray::ShapeError),
+    ExpGolShape(#[from] ndarray::ShapeError),
 }
 
 impl From<CoderError<DefaultEncoderFrontendError, Infallible>> for CodecError {
@@ -518,13 +516,15 @@ fn take_slice<'a>(
     Ok(&buf[start..end])
 }
 
+
+
 /* ────────────────────────────────────────────────────────────────────
  * Tests
  * ────────────────────────────────────────────────────────────────── */
 #[cfg(test)]
 mod tests {
     use super::*;
-    use numpy::ndarray::array;
+    use ndarray::array;
 
     #[test]
     fn roundtrip_fixed() {

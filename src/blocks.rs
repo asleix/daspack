@@ -13,9 +13,9 @@ use std::io::{Cursor, Read};
 
 use anyhow::{Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use numpy::ndarray::{concatenate, s, Array2, Axis};
+use ndarray::{concatenate, s, Array2, Axis};
 use rayon::prelude::*;
-use crate::entropy::{compress_residuals, decompress_residuals};
+use crate::entropy::{compress_residuals_rice, decompress_residuals_rice};
 use crate::prediction::{LpcTool, MultiBlockPredictor};
 
 //────────────────────────────── PARAMETERS ──────────────────────────────
@@ -84,13 +84,13 @@ fn compress_means(means: &[i32], _tail_cut: f64) -> Result<Vec<u8>> {
     deltas.push(means[0]);
     for i in 1..means.len() { deltas.push(means[i] - means[i - 1]); }
     let arr = Array2::from_shape_vec((deltas.len(), 1), deltas)?;
-    Ok(compress_residuals(&arr)?)
+    Ok(compress_residuals_rice(arr.view())?)
 }
 
 #[inline]
 fn decompress_means(stream: &[u8], rows: usize) -> Result<Vec<i32>> {
     if stream.is_empty() { return Ok(vec![0; rows]); }
-    let deltas = decompress_residuals(stream)?;
+    let deltas = decompress_residuals_rice(stream)?;
     let mut means = Vec::with_capacity(rows);
     for (i, &d) in deltas.iter().enumerate() {
         let m = if i == 0 { d } else { means[i - 1] + d };
@@ -170,7 +170,7 @@ impl BlockProcessor {
             let subbands = split_subbands_2d(&residuals, self.p.lx, self.p.lt);
             let mut out = Vec::with_capacity(subbands.len() * 4);
             for sb in subbands {
-                let comp = compress_residuals(&sb)?;
+                let comp = compress_residuals_rice(sb.view())?;
                 out.write_u32::<LittleEndian>(comp.len() as u32)?;
                 out.extend_from_slice(&comp);
             }
@@ -201,7 +201,7 @@ impl BlockProcessor {
                 let len = cur.read_u32::<LittleEndian>()? as usize;
                 let mut buf = vec![0u8; len];
                 cur.read_exact(&mut buf)?;
-                subbands.push(decompress_residuals(&buf)?);
+                subbands.push(decompress_residuals_rice(&buf)?);
             }
             combine_subbands_2d(&subbands, self.p.lx, self.p.lt)
         };
@@ -260,7 +260,7 @@ pub fn compress_lossless(data: &Array2<i32>, p: CompressParams) -> Result<Vec<u8
     let enc_blocks: Vec<EncodedBlock> = blocks.par_iter().map(|&(r, c)| {
         let r_end = cmp::min(r + p.block_height, h);
         let c_end = cmp::min(c + p.block_width, w);
-        let blk = data.slice(s![r..r_end, c..c_end]).to_owned();
+        let blk = data.slice(s![r..r_end, c..c_end]).as_standard_layout().to_owned();
         bp.encode_block(blk).with_context(|| format!("encode block @({r},{c})"))
     }).collect::<Result<_>>()?;
 

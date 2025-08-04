@@ -12,9 +12,9 @@ use crate::entropy;
 
 
 /// ---------- Python bindings for calling internal functions ------------
+// #[allow(non_snake_case)]
 #[pymodule]
 fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
-
     /// Wavelet Transforms
     #[pyfn(m)]
     #[pyo3(name = "fwd_dwt_txfm_1d")]
@@ -355,9 +355,9 @@ fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
         _tail_cut: f64,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
 
-        let local: Array2<i32> =  x.as_array().to_owned();
+        let local =  x.as_array();
 
-        let comp = entropy::compress_residuals(&local).unwrap();
+        let comp = entropy::compress_residuals_rice(local).unwrap();
 
         Ok(PyArray1::from_vec(py, comp).to_owned())
     }
@@ -371,7 +371,7 @@ fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
 
         let local = compressed.to_owned();
         let buf = local.as_slice().unwrap();
-        let recon = entropy::decompress_residuals(buf).unwrap();
+        let recon = entropy::decompress_residuals_rice(buf).unwrap();
 
         Ok(recon.to_pyarray(py))
     }

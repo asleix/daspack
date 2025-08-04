@@ -1,14 +1,11 @@
-use compute::{compress_residuals, decompress_residuals};
 use compute::{compress_lossless, decompress_lossless, CompressParams};
-use numpy::ndarray::{Array2, Axis};
+use ndarray::{Array2, Axis};
 use rand::Rng;
 use std::time::Instant;
 use rand_distr::{StandardNormal, Distribution};
 
 
 fn main() {
-
-
 
     // Generate large array of shape (1000, 512) with values ~ residuals
     let mut rng = rand::rng();

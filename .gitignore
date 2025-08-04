@@ -6,3 +6,4 @@ data
 .pytest_cache
 target
 Cargo.lock
+*.so
