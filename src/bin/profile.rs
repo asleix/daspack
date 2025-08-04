@@ -29,7 +29,7 @@ fn main() {
         .unwrap();
 
     pool.install(|| {
-        let params = CompressParams::new(2000, 2000, 0, 0, 2, 0.0);
+        let params = CompressParams::new(2000, 2000, 0, 0, 2);
         let compressed = compress_lossless(&data, params.clone()).unwrap();
         //let compressed = compress_residuals(&data).unwrap();
         println!("Compression took {:?}", start.elapsed());

@@ -49,7 +49,6 @@ impl RuntimeParams {
     /// [6] lx
     /// [7] lt
     /// [8] lpc_order
-    /// [9] tail_cut ‰   (e.g. 250 = 0.25)
     /// [10] byte-order  (0 = little, 1 = big)
     unsafe fn from_cd_values(cd_vals: &[c_uint]) -> Self {
         let mut it = cd_vals.iter().copied();
@@ -63,10 +62,9 @@ impl RuntimeParams {
         let lx    = it.next().unwrap_or(1)  as usize;
         let lt    = it.next().unwrap_or(1)  as usize;
         let lpc   = it.next().unwrap_or(4)  as usize;
-        let tail  = it.next().unwrap_or(250) as f64 / 1000.0;
         let is_be    = it.next().unwrap_or(0) != 0;
 
-        let mut cparams = CompressParams::new(bh, bw, lx, lt, lpc, tail);
+        let mut cparams = CompressParams::new(bh, bw, lx, lt, lpc);
         cparams.lpc_bits = 8;                 // keep defaults
         cparams.lpc_range = (-1.0, 1.0);
 
@@ -153,8 +151,8 @@ extern "C" fn daspack_set_local(dcpl: hid_t, type_id: hid_t, space: hid_t) -> c_
         let user_opts = &cd_buf[..cd_len];
 
         // merge 
-        let default = CompressParams::new(64, 64, 1, 1, 4, 0.25);
-        let merged: [u32; 6] = match user_opts.len() {
+        let default = CompressParams::new(64, 64, 1, 1, 4);
+        let merged: [u32; 5] = match user_opts.len() {
             6 => user_opts.try_into().unwrap(),
             0 => [
                 default.block_height as u32,
@@ -162,10 +160,9 @@ extern "C" fn daspack_set_local(dcpl: hid_t, type_id: hid_t, space: hid_t) -> c_
                 default.lx  as u32,
                 default.lt  as u32,
                 default.lpc_order as u32,
-                (default.tail_cut * 1000.0) as u32,
             ],
             _ => {
-                eprintln!("DASPack: compression_opts must have 6 ints (got {})", user_opts.len());
+                eprintln!("DASPack: compression_opts must have 5 ints (got {})", user_opts.len());
                 return -1;
             }
         };

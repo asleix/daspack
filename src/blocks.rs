@@ -28,7 +28,6 @@ pub struct CompressParams {
     pub lx: usize,
     pub lt: usize,
     pub lpc_order: usize,
-    pub tail_cut: f64,
     // optional tuning
     pub lpc_bits: u8,
     pub lpc_range: (f64, f64),
@@ -37,8 +36,8 @@ pub struct CompressParams {
 }
 
 impl CompressParams {
-    pub fn new(block_height: usize, block_width: usize, lx: usize, lt: usize, lpc_order: usize, tail_cut: f64) -> Self {
-        Self { block_height, block_width, lx, lt, lpc_order, tail_cut, lpc_bits: 6, lpc_range: (-1.5, 1.5), row_demean: true}
+    pub fn new(block_height: usize, block_width: usize, lx: usize, lt: usize, lpc_order: usize) -> Self {
+        Self { block_height, block_width, lx, lt, lpc_order, lpc_bits: 6, lpc_range: (-1.5, 1.5), row_demean: true}
     }
 }
 
@@ -63,12 +62,16 @@ fn split_subbands_2d(res_block: &Array2<i32>, lx: usize, lt: usize) -> Vec<Array
 #[inline]
 fn combine_subbands_2d(subbands: &[Array2<i32>], lx: usize, lt: usize) -> Array2<i32> {
     if lx > 0 && lt > 0 {
-        let (h2, w2) = (subbands[0].nrows(), subbands[0].ncols());
-        let mut out = Array2::<i32>::zeros((h2 * 2, w2 * 2));
-        out.slice_mut(s![0..h2, 0..w2]).assign(&subbands[0]);
-        out.slice_mut(s![0..h2, w2..]).assign(&subbands[1]);
-        out.slice_mut(s![h2.., 0..w2]).assign(&subbands[2]);
-        out.slice_mut(s![h2.., w2..]).assign(&subbands[3]);
+        let h_top  = subbands[0].nrows();
+        let h_bot  = subbands[2].nrows();
+        let w_left = subbands[0].ncols();
+        let w_right= subbands[1].ncols();
+
+        let mut out = Array2::<i32>::zeros((h_top + h_bot, w_left + w_right));
+        out.slice_mut(s![0..h_top, 0..w_left]).assign(&subbands[0]);
+        out.slice_mut(s![0..h_top, w_left..w_left+w_right]).assign(&subbands[1]);
+        out.slice_mut(s![h_top..h_top+h_bot, 0..w_left]).assign(&subbands[2]);
+        out.slice_mut(s![h_top..h_top+h_bot, w_left..w_left+w_right]).assign(&subbands[3]);
         out
     } else {
         subbands[0].clone()
@@ -78,7 +81,7 @@ fn combine_subbands_2d(subbands: &[Array2<i32>], lx: usize, lt: usize) -> Array2
 //────────────────────────── MEAN (DE)COMPRESSION ────────────────────────
 
 #[inline]
-fn compress_means(means: &[i32], _tail_cut: f64) -> Result<Vec<u8>> {
+fn compress_means(means: &[i32]) -> Result<Vec<u8>> {
     if means.is_empty() { return Ok(Vec::new()); }
     let mut deltas = Vec::<i32>::with_capacity(means.len());
     deltas.push(means[0]);
@@ -179,7 +182,7 @@ impl BlockProcessor {
 
         // 4. Compress means (may be empty)
         let mean_bytes = if self.p.row_demean {
-            compress_means(&means, self.p.tail_cut)?
+            compress_means(&means)?
         } else {
             Vec::new()
         };

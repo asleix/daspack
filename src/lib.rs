@@ -4,7 +4,7 @@
 //! Add the resulting shared library to HDF5_PLUGIN_PATH
 //! -------------------------------------------------------------
 
-mod wavelets;
+pub mod wavelets;
 mod prediction;
 pub mod entropy;
 mod blocks;

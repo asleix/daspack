@@ -172,7 +172,7 @@ fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
         let local_data: Array2<i32> =  data.as_array().to_owned();
         
-        let p = blocks::CompressParams::new(local_data.shape()[0], local_data.shape()[1], 1, 1, 1, 1.5);
+        let p = blocks::CompressParams::new(local_data.shape()[0], local_data.shape()[1], 1, 1, 1);
 
         let bitstream = blocks::compress_lossless(&local_data, p).expect("compress_lossless failed");
         
@@ -188,7 +188,7 @@ fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
     ) -> PyResult<Bound<'py, PyArray2<i32>>> {
 
         let local_bytes= bitstream.to_vec()?;
-        let p = blocks::CompressParams::new(shape.0, shape.1, 1, 1, 1, 1.5);
+        let p = blocks::CompressParams::new(shape.0, shape.1, 1, 1, 1);
 
         let data = blocks::decompress_lossless(&local_bytes, shape, p).expect("decompress failed");
         Ok(data.to_pyarray(py))
