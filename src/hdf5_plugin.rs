@@ -1,7 +1,7 @@
 
 // hdf5_plugin.rs
 
-use crate::blocks::{compress_lossless, decompress_lossless, CompressParams};
+use crate::codec::{CodecLossless, Codec, CompressParams};
 
 
 // ───────────── dependencies ─────────────
@@ -293,12 +293,16 @@ fn encode_chunk(raw: &[u8], p: &RuntimeParams) -> Result<Vec<u8>> {
 
     let arr = Array2::from_shape_vec((p.rows, p.cols), vals)
         .context("shape mismatch while forming ndarray")?;
-    compress_lossless(&arr, p.cparams.clone())
+
+    let codec = CodecLossless::new(p.cparams.clone(), 0)?;
+    codec.compress(arr.view())
 }
 
 
 fn decode_chunk(comp: &[u8], p: &RuntimeParams) -> Result<Vec<u8>> {
-    let arr = decompress_lossless(comp, (p.rows, p.cols), p.cparams.clone())?;
+    let codec = CodecLossless::new(p.cparams.clone(), 0)?;
+        
+    let arr = codec.decompress(comp, (p.rows, p.cols))?;
     let mut out = Vec::<u8>::with_capacity(p.rows * p.cols * 4);
 
     for v in arr.iter() {

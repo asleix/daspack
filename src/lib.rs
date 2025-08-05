@@ -4,14 +4,11 @@
 //! Add the resulting shared library to HDF5_PLUGIN_PATH
 //! -------------------------------------------------------------
 
-pub mod wavelets;
-mod prediction;
-pub mod entropy;
-mod blocks;
-pub use crate::entropy::{compress_residuals_rice, decompress_residuals_rice};
-pub use crate::blocks::{compress_lossless, decompress_lossless, CompressParams};
+pub mod core;
+pub mod codec;
 
-pub use crate::entropy::exp_golomb::encode_k_expgolomb_list;
+pub use crate::core::entropy::{compress_residuals_rice, decompress_residuals_rice};
+pub use crate::codec::{Codec, CodecLossless, CompressParams};
 
 
 #[cfg(feature = "python")]

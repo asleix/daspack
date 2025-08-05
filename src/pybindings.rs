@@ -4,11 +4,11 @@ use pyo3::{pymodule, types::PyModule, PyResult, Python, Bound};
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 
-use crate::wavelets;
-use crate::prediction;
-use crate::blocks;
-use crate::entropy::exp_golomb;
-use crate::entropy;
+use crate::core::wavelets;
+use crate::core::entropy;
+use crate::core::prediction;
+use crate::codec;
+
 
 
 /// ---------- Python bindings for calling internal functions ------------
@@ -116,83 +116,83 @@ fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
     }
 
 
-    /// Block Prediction
-    #[pyfn(m)]
-    #[pyo3(name = "predict_block")]
-    #[allow(clippy::type_complexity)]
-    fn predict_block<'py>(
-        py: Python<'py>,
-        x: PyReadonlyArray2<'py, i32>,
-        levels: usize,
-        lpc_order: usize,
-    ) -> (Bound<'py, PyArray2<i32>>, Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<f64>>)  {
+    // /// Block Prediction
+    // #[pyfn(m)]
+    // #[pyo3(name = "predict_block")]
+    // #[allow(clippy::type_complexity)]
+    // fn predict_block<'py>(
+    //     py: Python<'py>,
+    //     x: PyReadonlyArray2<'py, i32>,
+    //     levels: usize,
+    //     lpc_order: usize,
+    // ) -> (Bound<'py, PyArray2<i32>>, Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<f64>>)  {
 
-        let local: Array2<i32> =  x.as_array().to_owned();
-        let lpc_tool =  prediction::LpcTool::new(lpc_order, 6, 1.0, -1.0);
-        let predictor = prediction::MultiBlockPredictor::new(levels, levels, lpc_tool);
+    //     let local: Array2<i32> =  x.as_array().to_owned();
+    //     let lpc_tool =  prediction::LpcTool::new(lpc_order, 6, 1.0, -1.0);
+    //     let predictor = prediction::MultiBlockPredictor::new(levels, levels, lpc_tool);
 
-        let (resid, row_coefs, col_coefs) = predictor.predict_diff(&local);
+    //     let (resid, row_coefs, col_coefs) = predictor.predict_diff(&local);
 
-        (
-            resid.to_pyarray(py),
-            row_coefs.to_pyarray(py),
-            col_coefs.to_pyarray(py),
-        )
+    //     (
+    //         resid.to_pyarray(py),
+    //         row_coefs.to_pyarray(py),
+    //         col_coefs.to_pyarray(py),
+    //     )
 
-    }
+    // }
 
-    #[pyfn(m)]
-    #[pyo3(name = "reconstruct_block")]
-    fn reconstruct_block<'py>(
-        py: Python<'py>,
-        resid: PyReadonlyArray2<'py, i32>,
-        row_coefs: PyReadonlyArray2<'py, f64>,
-        col_coefs: PyReadonlyArray2<'py, f64>,
-        levels: usize,
-        lpc_order: usize,
-    ) -> Bound<'py, PyArray2<i32>> {
+    // #[pyfn(m)]
+    // #[pyo3(name = "reconstruct_block")]
+    // fn reconstruct_block<'py>(
+    //     py: Python<'py>,
+    //     resid: PyReadonlyArray2<'py, i32>,
+    //     row_coefs: PyReadonlyArray2<'py, f64>,
+    //     col_coefs: PyReadonlyArray2<'py, f64>,
+    //     levels: usize,
+    //     lpc_order: usize,
+    // ) -> Bound<'py, PyArray2<i32>> {
 
-        let local_x: Array2<i32> =  resid.as_array().to_owned();
-        let local_r: Array2<f64> =  row_coefs.as_array().to_owned();
-        let local_c: Array2<f64> =  col_coefs.as_array().to_owned();
+    //     let local_x: Array2<i32> =  resid.as_array().to_owned();
+    //     let local_r: Array2<f64> =  row_coefs.as_array().to_owned();
+    //     let local_c: Array2<f64> =  col_coefs.as_array().to_owned();
 
-        let lpc_tool =  prediction::LpcTool::new(lpc_order, 6, 1.0, -1.0);
-        let predictor = prediction::MultiBlockPredictor::new(levels, levels, lpc_tool);
+    //     let lpc_tool =  prediction::LpcTool::new(lpc_order, 6, 1.0, -1.0);
+    //     let predictor = prediction::MultiBlockPredictor::new(levels, levels, lpc_tool);
 
-        let recon = predictor.reconstruct_diff(local_x, &local_r, &local_c);
+    //     let recon = predictor.reconstruct_diff(local_x, &local_r, &local_c);
 
-        recon.to_pyarray(py)
-    }
+    //     recon.to_pyarray(py)
+    // }
 
-    #[pyfn(m)]
-    #[pyo3(name = "compress_data")]
-    fn compress_data<'py>(
-        py: Python<'py>,
-        data: PyReadonlyArray2<'py, i32>,
-    ) -> PyResult<Bound<'py, PyArray1<u8>>> {
-        let local_data: Array2<i32> =  data.as_array().to_owned();
+    // #[pyfn(m)]
+    // #[pyo3(name = "compress_data")]
+    // fn compress_data<'py>(
+    //     py: Python<'py>,
+    //     data: PyReadonlyArray2<'py, i32>,
+    // ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    //     let local_data: Array2<i32> =  data.as_array().to_owned();
         
-        let p = blocks::CompressParams::new(local_data.shape()[0], local_data.shape()[1], 1, 1, 1);
+    //     let p = blocks::CompressParams::new(local_data.shape()[0], local_data.shape()[1], 1, 1, 1);
 
-        let bitstream = blocks::compress_lossless(&local_data, p).expect("compress_lossless failed");
+    //     let bitstream = blocks::compress_lossless(&local_data, p).expect("compress_lossless failed");
         
-        Ok(bitstream.to_pyarray(py))
-    }
+    //     Ok(bitstream.to_pyarray(py))
+    // }
 
-    #[pyfn(m)]
-    #[pyo3(name = "decompress_data")]
-    fn decompress_data<'py>(
-        py: Python<'py>,
-        bitstream: PyReadonlyArray1<'py, u8>,
-        shape: (usize, usize)
-    ) -> PyResult<Bound<'py, PyArray2<i32>>> {
+    // #[pyfn(m)]
+    // #[pyo3(name = "decompress_data")]
+    // fn decompress_data<'py>(
+    //     py: Python<'py>,
+    //     bitstream: PyReadonlyArray1<'py, u8>,
+    //     shape: (usize, usize)
+    // ) -> PyResult<Bound<'py, PyArray2<i32>>> {
 
-        let local_bytes= bitstream.to_vec()?;
-        let p = blocks::CompressParams::new(shape.0, shape.1, 1, 1, 1);
+    //     let local_bytes= bitstream.to_vec()?;
+    //     let p = blocks::CompressParams::new(shape.0, shape.1, 1, 1, 1);
 
-        let data = blocks::decompress_lossless(&local_bytes, shape, p).expect("decompress failed");
-        Ok(data.to_pyarray(py))
-    }
+    //     let data = blocks::decompress_lossless(&local_bytes, shape, p).expect("decompress failed");
+    //     Ok(data.to_pyarray(py))
+    // }
 
 
 
@@ -314,36 +314,36 @@ fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
 
     // Exp-golomb
 
-    #[pyfn(m)]
-    #[pyo3(name = "encode_exp_golomb")]
-    fn encode_exp_golomb<'py>(
-        py: Python<'py>,
-        x: PyReadonlyArray1<'py, i32>,
-        k: u32,
-    ) -> Bound<'py, PyArray1<u8>> {
+    // #[pyfn(m)]
+    // #[pyo3(name = "encode_exp_golomb")]
+    // fn encode_exp_golomb<'py>(
+    //     py: Python<'py>,
+    //     x: PyReadonlyArray1<'py, i32>,
+    //     k: u32,
+    // ) -> Bound<'py, PyArray1<u8>> {
 
-        let local =  x.as_array().to_owned().to_vec();
+    //     let local =  x.as_array().to_owned().to_vec();
 
-        let comp = exp_golomb::encode_k_expgolomb_list(&local, k);
+    //     let comp = exp_golomb::encode_k_expgolomb_list(&local, k);
 
-        PyArray1::from_vec(py, comp).to_owned()
-    }
+    //     PyArray1::from_vec(py, comp).to_owned()
+    // }
 
-    #[pyfn(m)]
-    #[pyo3(name = "decode_exp_golomb")]
-    fn decode_exp_golomb<'py>(
-        py: Python<'py>,
-        x: PyReadonlyArray1<'py, u8>,
-        count: usize,
-        k: u32,
-    ) -> Bound<'py, PyArray1<i32>> {
+    // #[pyfn(m)]
+    // #[pyo3(name = "decode_exp_golomb")]
+    // fn decode_exp_golomb<'py>(
+    //     py: Python<'py>,
+    //     x: PyReadonlyArray1<'py, u8>,
+    //     count: usize,
+    //     k: u32,
+    // ) -> Bound<'py, PyArray1<i32>> {
 
-        let local =  x.as_array().to_owned().to_vec();
+    //     let local =  x.as_array().to_owned().to_vec();
 
-        let comp = exp_golomb::decode_k_expgolomb_list(&local, count, k);
+    //     let comp = exp_golomb::decode_k_expgolomb_list(&local, count, k);
 
-        PyArray1::from_vec(py, comp).to_owned()
-    }
+    //     PyArray1::from_vec(py, comp).to_owned()
+    // }
 
 
     // Entropy Coding

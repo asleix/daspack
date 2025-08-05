@@ -1,12 +1,10 @@
-// rust/src/entropy.rs
 // Fast residual compressor for DAS data (full source)
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ndarray::{Array2, Axis};
 use std::io::{Cursor, Read};
 
-pub mod exp_golomb;
-mod golomb_rice;
+pub mod golomb_rice;
 // mod fast_models;
 // mod mu_law_quant;
 // mod ans_tables;

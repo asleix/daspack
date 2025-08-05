@@ -16,7 +16,7 @@
 //! ```
 
 use compute::{
-    compress_lossless, decompress_lossless, compress_residuals_rice, decompress_residuals_rice, CompressParams,
+    Codec, CodecLossless, compress_residuals_rice, decompress_residuals_rice, CompressParams,
 };
 use ndarray::Array2;
 use rand::rngs::StdRng;
@@ -60,11 +60,13 @@ fn roundtrip_lossless(data: &Array2<i32>, mut p: CompressParams) {
     for &row_demean in &[true, false] {
         p.row_demean = row_demean;
 
+        let codec  = CodecLossless::new(p.clone(), 0).unwrap();
+
         let bytes =
-            compress_lossless(data, p.clone()).expect("compress_lossless should succeed");
+            codec.compress(data.view()).expect("compress_lossless should succeed");
 
         eprintln!("shape={:?}, params={:?}", data.dim(), p);
-        let decoded = decompress_lossless(&bytes, data.dim(), p.clone())
+        let decoded = codec.decompress(&bytes, data.dim())
             .expect("decompress_lossless should succeed");
 
         assert_eq!(

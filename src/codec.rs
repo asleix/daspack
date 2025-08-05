@@ -1,0 +1,183 @@
+// codec_lossless.rs ──────────────────────────────────────────────────
+// Multithreaded, loss-less block codec built on BlockProcessor.
+// --------------------------------------------------------------------
+use std::io::{Cursor, Read};
+use std::sync::Arc;
+
+use anyhow::{anyhow, Result};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use ndarray::{s, Array2, ArrayView2};
+use rayon::prelude::*;
+
+mod blocks;
+mod params;
+use blocks::{BlockProcessor, BlockTransform, EncodedBlock, EncodedBlockSlice};
+pub use params::{CompressParams, Shape};
+
+// ────────────────────────────── TRAIT ────────────────────────────────
+pub trait Codec: Send + Sync {
+    /// Compress the full 2-D data array into one byte-stream.
+    fn compress(&self, data: ArrayView2<i32>) -> Result<Vec<u8>>;
+
+    /// Decompress `stream` back to an `Array2<i32>` of shape `shape`.
+    fn decompress(&self, stream: &[u8], shape: Shape) -> Result<Array2<i32>>;
+}
+
+// ─────────────────────── LOSSLESS IMPLEMENTATION ─────────────────────
+pub struct CodecLossless {
+    p: CompressParams,
+    inner: Arc<BlockProcessor>,
+}
+
+impl CodecLossless {
+    /// Build a new codec; `threads == 0` → use Rayon’s global pool.
+    pub fn new(p: CompressParams, threads: usize) -> Result<Self> {
+        if threads > 0 {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build_global()
+                .map_err(|e| anyhow!("Thread-pool init failed: {e}"))?;
+        }
+        Ok(Self {
+            inner: Arc::new(BlockProcessor::new(p.clone())),
+            p,
+        })
+    }
+}
+
+// ────────────────────────── CODEC TRAIT IMPL ─────────────────────────
+impl Codec for CodecLossless {
+    fn compress(&self, data: ArrayView2<i32>) -> Result<Vec<u8>> {
+        let coords = block_coords(data.dim(), &self.p);
+        let blocks: Vec<Vec<u8>> = coords
+            .par_iter()
+            .map(|&(r, c)| {
+                let view = slice_block(data, (r, c), &self.p);
+                let enc: EncodedBlock = self.inner.encode(view)?;
+                let mut buf = enc.to_bytes();
+
+                let mut out = Vec::with_capacity(4 + buf.len());
+                out.write_u32::<LittleEndian>(buf.len() as u32)?;
+                out.append(&mut buf);
+                Ok::<_, anyhow::Error>(out)
+            })
+            .collect::<Result<_>>()?;
+
+        let mut stream = Vec::new();
+        stream.write_u32::<LittleEndian>(blocks.len() as u32)?;
+        for b in blocks {
+            stream.extend_from_slice(&b);
+        }
+        Ok(stream)
+    }
+
+    fn decompress(&self, stream: &[u8], shape: Shape) -> Result<Array2<i32>> {
+        let (h, w) = shape;
+        let coords = block_coords(shape, &self.p);
+
+        let mut cur = Cursor::new(stream);
+        let n_blocks = cur.read_u32::<LittleEndian>()? as usize;
+        if n_blocks != coords.len() {
+            return Err(anyhow!(
+                "Block-count mismatch (stream {n_blocks}, expected {})",
+                coords.len()
+            ));
+        }
+
+        let mut raw = Vec::with_capacity(n_blocks);
+        for _ in 0..n_blocks {
+            let len = cur.read_u32::<LittleEndian>()? as usize;
+            let mut buf = vec![0u8; len];
+            cur.read_exact(&mut buf)?;
+            raw.push(buf);
+        }
+
+        let decoded: Vec<(usize, Array2<i32>)> = raw
+            .into_par_iter()
+            .enumerate()
+            .map(|(idx, buf)| {
+                let slice = EncodedBlockSlice::from_bytes(&buf)?;
+                let blk = self.inner.decode(slice, self.p.block_shape())?;
+                Ok::<_, anyhow::Error>((idx, blk))
+            })
+            .collect::<Result<_>>()?;
+
+        let mut out = Array2::<i32>::zeros((h, w));
+        for (idx, blk) in decoded {
+            let (r0, c0) = coords[idx];
+            out.slice_mut(s![r0..r0 + blk.nrows(), c0..c0 + blk.ncols()])
+                .assign(&blk);
+        }
+        Ok(out)
+    }
+}
+
+// ────────────────────────── HELPER FUNCTIONS ─────────────────────────
+fn block_coords((h, w): Shape, p: &CompressParams) -> Vec<(usize, usize)> {
+    (0..h)
+        .step_by(p.block_height)
+        .flat_map(|r| (0..w).step_by(p.block_width).map(move |c| (r, c)))
+        .collect()
+}
+
+fn slice_block<'a>(
+    data: ArrayView2<'a, i32>,
+    (r, c): (usize, usize),
+    p: &CompressParams,
+) -> ArrayView2<'a, i32> {
+    let r_end = (r + p.block_height).min(data.nrows());
+    let c_end = (c + p.block_width).min(data.ncols());
+    data.slice_move(s![r..r_end, c..c_end])
+}
+
+#[cfg(test)]
+mod codec_tests {
+    use super::*;               // brings Codec, CodecLossless, CompressParams into scope
+    use ndarray::{array, Array2};
+    use rand::{Rng, SeedableRng};
+    use rand_distr::{Distribution, Normal};
+
+    /// Utility: compress → decompress → assert equality.
+    fn roundtrip<C: Codec>(codec: &C, data: &Array2<i32>) {
+        let bytes = codec.compress(data.view()).expect("compress");
+        let out = codec
+            .decompress(&bytes, data.dim())
+            .expect("decompress");
+        assert_eq!(data, &out, "round-trip mismatch");
+    }
+
+    #[test]
+    fn fixed_small_block() {
+        let data = array![
+            [12, -34, 56, -78],
+            [90, -12, 34, -56],
+            [78, -90, 12, -34]
+        ];
+        let p = CompressParams::new(3, 4, /*lx*/ 1, /*lt*/ 1, /*order*/ 2);
+        let codec = CodecLossless::new(p, /*threads*/ 4).unwrap();
+        roundtrip(&codec, &data);
+    }
+
+    #[test]
+    fn random_uniform_frame() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xC0FFEE);
+        let data: Array2<i32> =
+            Array2::from_shape_fn((64, 32), |_| rng.random_range(-32_768..32_768));
+        let p = CompressParams::new(64, 32, 0, 0, 1); // single block, 1-tap LPC
+        let codec = CodecLossless::new(p, 0).unwrap(); // 0 ⇒ global Rayon pool
+        roundtrip(&codec, &data);
+    }
+
+    #[test]
+    fn random_gaussian_frame() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xDEADBEEF);
+        let normal = Normal::new(0.0, 10_000.0).unwrap();
+        let data: Array2<i32> =
+            Array2::from_shape_fn((128, 128), |_| normal.sample(&mut rng) as i32);
+
+        let mut p = CompressParams::new(64, 64, /*lx*/ 1, /*lt*/ 1, /*order*/ 4);
+        p.row_demean = true;                           // enable DC removal
+        let codec = CodecLossless::new(p, 8).unwrap(); // 8 threads
+        roundtrip(&codec, &data);
+    }
+}
