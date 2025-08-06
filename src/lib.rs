@@ -16,6 +16,7 @@ mod pybindings;
 
 #[cfg(feature = "hdf5")]
 mod hdf5_plugin;
+
 #[cfg(feature = "hdf5")]
 pub use hdf5_plugin::*;
 

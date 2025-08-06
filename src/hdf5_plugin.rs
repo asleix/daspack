@@ -130,7 +130,10 @@ extern "C" fn daspack_set_local(dcpl: hid_t, type_id: hid_t, space: hid_t) -> c_
         // ---- dataset & chunk geometry ----------------------------------
         let ndims = H5Sget_simple_extent_ndims(space) as usize;
         let mut chunk = vec![0u64; ndims];
-        H5Pget_chunk(dcpl, ndims as c_int, chunk.as_mut_ptr());
+        if H5Pget_chunk(dcpl, ndims as c_int, chunk.as_mut_ptr()) < 0 {
+            eprintln!("DASPack: H5Pget_chunk failed");
+            return -1;
+        }
         let (rows, cols) = (chunk[0] as usize, chunk[1] as usize);
 
         // ---- fetch any user-supplied compression_opts ------------------
@@ -138,20 +141,23 @@ extern "C" fn daspack_set_local(dcpl: hid_t, type_id: hid_t, space: hid_t) -> c_
         let mut cd_len: size_t = 20;
         let mut cd_buf = [0u32; 20];
 
-        H5Pget_filter_by_id2(
+        if H5Pget_filter_by_id2(
             dcpl,
             DASPACK_FILTER_ID,
             &mut flags,
             &mut cd_len,
             cd_buf.as_mut_ptr(),
             0,
-            ptr::null_mut(),
-            ptr::null_mut(),
-        );
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ) < 0 {
+            eprintln!("DASPack: H5Pget_filter_by_id2 failed");
+            return -1;
+        }
         let user_opts = &cd_buf[..cd_len];
 
         // merge 
-        let default = CompressParams::new(64, 64, 1, 1, 4);
+        let default = CompressParams::new(1000, 1000, 1, 1, 1);
         // final cd_values array
         let merged: [u32; 5] = match user_opts.len() {
             5 => {
@@ -305,13 +311,13 @@ fn encode_chunk(raw: &[u8], p: &RuntimeParams) -> Result<Vec<u8>> {
     let arr = Array2::from_shape_vec((p.rows, p.cols), vals)
         .context("shape mismatch while forming ndarray")?;
 
-    let codec = CodecLossless::new(p.cparams.clone(), 0)?;
+    let codec = CodecLossless::new(p.cparams.clone())?;
     codec.compress(arr.view())
 }
 
 
 fn decode_chunk(comp: &[u8], p: &RuntimeParams) -> Result<Vec<u8>> {
-    let codec = CodecLossless::new(p.cparams.clone(), 0)?;
+    let codec = CodecLossless::new(p.cparams.clone())?;
         
     let arr = codec.decompress(comp, (p.rows, p.cols))?;
     let mut out = Vec::<u8>::with_capacity(p.rows * p.cols * 4);

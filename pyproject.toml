@@ -12,14 +12,14 @@ classifiers = [
   "Topic :: System :: Archiving :: Compression",
   "Intended Audience :: Science/Research",
 ]
-version = "2025.0.0"
+version = "0.0.1"
 description = "DASPack: Controlled data compression for Distributed Acoustic Sensing"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [
   {name = "Aleix Segui"},
 ]
-license = {file = "LICENSE"}
+license = {text = "BSD-3-Clause"}
 keywords = ["Distributed Acoustic Sensing", "compression", "Data Compression"]
 maintainers = [
   {name = "Aleix Segui"},

@@ -11,6 +11,7 @@ use rayon::prelude::*;
 
 mod blocks;
 mod params;
+mod common;
 use blocks::{BlockProcessor, BlockTransform, EncodedBlock, EncodedBlockSlice};
 pub use params::{CompressParams, Shape};
 
@@ -30,19 +31,24 @@ pub struct CodecLossless {
 }
 
 impl CodecLossless {
-    /// Build a new codec; `threads == 0` → use Rayon’s global pool.
-    pub fn new(p: CompressParams, threads: usize) -> Result<Self> {
-        if threads > 0 {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build_global()
-                .map_err(|e| anyhow!("Thread-pool init failed: {e}"))?;
-        }
+    /// Build a new codec.
+    /// Semantics:
+    ///   - `threads > 0`  → use exactly that many threads (global Rayon pool).
+    ///   - `threads == 0` → use DASPACK_THREADS env (positive integer), else 1 thread.
+    pub fn with_threads(p: CompressParams, threads: usize) -> anyhow::Result<Self> {
+        let n = common::effective_threads(threads);
+
+        // Initialize (or attempt to) the Rayon *global* pool once, using `n`.
+        // If the global pool was already initialized elsewhere, we log and continue.
+        common::ensure_global_rayon_pool(n);
+
         Ok(Self {
-            inner: Arc::new(BlockProcessor::new(p.clone())),
+            inner: std::sync::Arc::new(BlockProcessor::new(p.clone())),
             p,
         })
     }
+
+    pub fn new(p: CompressParams) -> anyhow::Result<Self> { Self::with_threads(p, 0) }
 }
 
 // ────────────────────────── CODEC TRAIT IMPL ─────────────────────────
@@ -164,7 +170,7 @@ mod codec_tests {
             [78, -90, 12, -34]
         ];
         let p = CompressParams::new(3, 4, /*lx*/ 1, /*lt*/ 1, /*order*/ 2);
-        let codec = CodecLossless::new(p, /*threads*/ 4).unwrap();
+        let codec = CodecLossless::with_threads(p, /*threads*/ 4).unwrap();
         roundtrip(&codec, &data);
     }
 
@@ -174,7 +180,7 @@ mod codec_tests {
         let data: Array2<i32> =
             Array2::from_shape_fn((64, 32), |_| rng.random_range(-32_768..32_768));
         let p = CompressParams::new(64, 32, 0, 0, 1); // single block, 1-tap LPC
-        let codec = CodecLossless::new(p, 0).unwrap(); // 0 ⇒ global Rayon pool
+        let codec = CodecLossless::new(p).unwrap(); // 0 ⇒ global Rayon pool
         roundtrip(&codec, &data);
     }
 
@@ -187,7 +193,7 @@ mod codec_tests {
 
         let mut p = CompressParams::new(64, 64, /*lx*/ 1, /*lt*/ 1, /*order*/ 4);
         p.row_demean = true;                           // enable DC removal
-        let codec = CodecLossless::new(p, 8).unwrap(); // 8 threads
+        let codec = CodecLossless::with_threads(p, 8).unwrap(); // 8 threads
         roundtrip(&codec, &data);
     }
 
@@ -200,7 +206,7 @@ mod codec_tests {
 
         let mut p = CompressParams::new(64, 48, /*lx*/ 1, /*lt*/ 1, /*order*/ 4);
         p.row_demean = true;                           // enable DC removal
-        let codec = CodecLossless::new(p, 8).unwrap(); // 8 threads
+        let codec = CodecLossless::with_threads(p, 8).unwrap(); // 8 threads
         roundtrip(&codec, &data);
     }
 }
