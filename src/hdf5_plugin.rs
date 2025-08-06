@@ -152,20 +152,31 @@ extern "C" fn daspack_set_local(dcpl: hid_t, type_id: hid_t, space: hid_t) -> c_
 
         // merge 
         let default = CompressParams::new(64, 64, 1, 1, 4);
+        // final cd_values array
         let merged: [u32; 5] = match user_opts.len() {
-            6 => user_opts.try_into().unwrap(),
+            5 => {
+                // Try converting; if it fails, report and error out
+                match user_opts.try_into() {
+                    Ok(arr) => arr,
+                    Err(_) => {
+                        eprintln!("DASPack: unexpected compression_opts length {} (expected 5)", user_opts.len());
+                        return -1;
+                    }
+                }
+            }
             0 => [
-                default.block_height as u32,
-                default.block_width  as u32,
-                default.lx  as u32,
-                default.lt  as u32,
-                default.lpc_order as u32,
+                default.block_height  as u32,
+                default.block_width   as u32,
+                default.lx            as u32,
+                default.lt            as u32,
+                default.lpc_order     as u32,
             ],
-            _ => {
-                eprintln!("DASPack: compression_opts must have 5 ints (got {})", user_opts.len());
+            len => {
+                eprintln!("DASPack: compression_opts must have exactly 5 ints (got {})", len);
                 return -1;
             }
         };
+
 
         // byte order flag 
         let order_flag = match H5Tget_order(type_id) {

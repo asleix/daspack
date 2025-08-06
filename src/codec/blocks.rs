@@ -455,6 +455,34 @@ mod tests {
     }
 
     #[test]
+    fn random_gaussian_block_with_subbands_nonsquare() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let normal = Normal::new(0.0, 10_000.0).unwrap();
+        let blk: Array2<i32> = Array2::from_shape_fn((128, 128), |_| {
+            normal.sample(&mut rng) as i32
+        });
+
+        let mut p = CompressParams::new(128, 64, 1, 1, 4); // 4-tap LPC, 2×2 sub-bands
+        p.row_demean = true;
+        let codec = make_codec(p);
+        roundtrip(&codec, &blk);
+    }
+
+    #[test]
+    fn random_gaussian_block_with_subbands_nonsquare2() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(43);
+        let normal = Normal::new(0.0, 10_000.0).unwrap();
+        let blk: Array2<i32> = Array2::from_shape_fn((128, 128), |_| {
+            normal.sample(&mut rng) as i32
+        });
+
+        let mut p = CompressParams::new(128, 48, 1, 1, 4); // 4-tap LPC, 2×2 sub-bands
+        p.row_demean = true;
+        let codec = make_codec(p);
+        roundtrip(&codec, &blk);
+    }
+
+    #[test]
     fn random_gaussian_block_without_subbands() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0xDEADBEEF);
         let normal = Normal::new(0.0, 10_000.0).unwrap();

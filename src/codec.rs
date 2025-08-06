@@ -75,6 +75,15 @@ impl Codec for CodecLossless {
         let (h, w) = shape;
         let coords = block_coords(shape, &self.p);
 
+        let true_shapes: Vec<(usize, usize)> = coords
+            .iter()
+            .map(|&(r, c)| {
+                let rows = (r + self.p.block_height).min(h) - r;
+                let cols = (c + self.p.block_width).min(w) - c;
+                (rows, cols)
+            })
+            .collect();
+
         let mut cur = Cursor::new(stream);
         let n_blocks = cur.read_u32::<LittleEndian>()? as usize;
         if n_blocks != coords.len() {
@@ -97,7 +106,8 @@ impl Codec for CodecLossless {
             .enumerate()
             .map(|(idx, buf)| {
                 let slice = EncodedBlockSlice::from_bytes(&buf)?;
-                let blk = self.inner.decode(slice, self.p.block_shape())?;
+                let blk_shape = true_shapes[idx];
+                let blk = self.inner.decode(slice, blk_shape)?;
                 Ok::<_, anyhow::Error>((idx, blk))
             })
             .collect::<Result<_>>()?;
@@ -176,6 +186,19 @@ mod codec_tests {
             Array2::from_shape_fn((128, 128), |_| normal.sample(&mut rng) as i32);
 
         let mut p = CompressParams::new(64, 64, /*lx*/ 1, /*lt*/ 1, /*order*/ 4);
+        p.row_demean = true;                           // enable DC removal
+        let codec = CodecLossless::new(p, 8).unwrap(); // 8 threads
+        roundtrip(&codec, &data);
+    }
+
+    #[test]
+    fn random_gaussian_frame_nonsquare() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xDEADBEEF);
+        let normal = Normal::new(0.0, 10_000.0).unwrap();
+        let data: Array2<i32> =
+            Array2::from_shape_fn((128, 128), |_| normal.sample(&mut rng) as i32);
+
+        let mut p = CompressParams::new(64, 48, /*lx*/ 1, /*lt*/ 1, /*order*/ 4);
         p.row_demean = true;                           // enable DC removal
         let codec = CodecLossless::new(p, 8).unwrap(); // 8 threads
         roundtrip(&codec, &data);
