@@ -6,6 +6,8 @@
 
 DASPack is a fast, open‑source compressor that lets you store huge Distributed Acoustic Sensing (DAS) datasets **losslessly** or with a user‑defined, fixed reconstruction error. It couples wavelets, linear predictive coding and arithmetic coding in Rust, and plugs straight into the HDF5 pipeline so you can write compressed datasets with a single `h5py` call.
 
+Disclaimer. The final implementation is still being polished. An official release is expected by mid-august.
+
 ---
 
 ## ✨ Highlights
