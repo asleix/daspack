@@ -8,7 +8,7 @@ pub mod core;
 pub mod codec;
 
 pub use crate::core::entropy::{compress_residuals_rice, decompress_residuals_rice};
-pub use crate::codec::{Codec, LosslessCodec, CompressParams};
+pub use crate::codec::{DASCoder, CompressParams, UniformQuantizer, LosslessQuantizer};
 
 
 #[cfg(feature = "python")]

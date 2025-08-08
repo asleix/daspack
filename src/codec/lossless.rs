@@ -43,7 +43,11 @@ impl LosslessCodec {
 
 // ────────────────────────── CODEC TRAIT IMPL ─────────────────────────
 impl Codec for LosslessCodec {
+    type SourceType = i32;
     fn compress(&self, data: ArrayView2<i32>) -> Result<Vec<u8>> {
+        if data.is_empty() {
+            return Err(anyhow!("Empty data: expected non-empty input"));
+        }
         let coords = block_coords(data.dim(), &self.p);
         let blocks: Vec<Vec<u8>> = coords
             .par_iter()
@@ -120,6 +124,7 @@ impl Codec for LosslessCodec {
 
 // ────────────────────────── HELPER FUNCTIONS ─────────────────────────
 fn block_coords((h, w): Shape, p: &CompressParams) -> Vec<(usize, usize)> {
+    assert!(h > 0, "Expected positive size, got {}. Perhaps the data array is empty?", h);
     (0..h)
         .step_by(p.block_height)
         .flat_map(|r| (0..w).step_by(p.block_width).map(move |c| (r, c)))
@@ -144,7 +149,7 @@ mod codec_tests {
     use rand_distr::{Distribution, Normal};
 
     /// Utility: compress → decompress → assert equality.
-    fn roundtrip<C: Codec>(codec: &C, data: &Array2<i32>) {
+    fn roundtrip<C: Codec<SourceType = i32>>(codec: &C, data: &Array2<i32>) {
         let bytes = codec.compress(data.view()).expect("compress");
         let out = codec
             .decompress(&bytes, data.dim())

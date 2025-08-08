@@ -10,14 +10,14 @@
 //! Dev-deps (add to Cargo.toml if needed):
 //! ```toml
 //! [dev-dependencies]
-//! ndarray = "0.15"
 //! rand = "0.8"
 //! rand_distr = "0.4"
 //! ```
 
 use compute::{
-    Codec, CodecLossless, compress_residuals_rice, decompress_residuals_rice, CompressParams,
+    compress_residuals_rice, decompress_residuals_rice, CompressParams,
 };
+use compute::codec::{Codec, LosslessCodec};
 use ndarray::Array2;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -60,7 +60,7 @@ fn roundtrip_lossless(data: &Array2<i32>, mut p: CompressParams) {
     for &row_demean in &[true, false] {
         p.row_demean = row_demean;
 
-        let codec  = CodecLossless::new(p.clone(), 0).unwrap();
+        let codec  = LosslessCodec::new(p.clone()).unwrap();
 
         let bytes =
             codec.compress(data.view()).expect("compress_lossless should succeed");

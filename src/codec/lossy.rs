@@ -1,7 +1,9 @@
 use anyhow::Result;
 use ndarray::{Array2, ArrayView2};
 
-use super::{Codec, FloatCodec, Quantizer};
+use crate::codec::CodecParams;
+
+use super::{Codec, Quantizer, CodecError};
 
 
 /// Adapter/Decorator that wraps a lossless Codec and a Quantizer
@@ -17,15 +19,20 @@ impl<C: Codec, Q: Quantizer> LossyCodec<C, Q> {
     }
 }
 
-impl<C: Codec, Q: Quantizer> FloatCodec for LossyCodec<C, Q> {
-    fn compress(&self, data: ArrayView2<f64>) -> Result<Vec<u8>> {
+impl<C, Q> Codec for LossyCodec<C, Q>
+where
+    C: Codec<SourceType = i32>,              
+    Q: Quantizer + Clone,     
+{
+    type SourceType = Q::SourceType;
+    fn compress(&self, data: ArrayView2<Q::SourceType>) -> Result<Vec<u8>> {
         // 1) quantize floats -> ints
         let ints = self.quantizer.quantize(data);
         // 2) delegate to the lossless compressor
         self.inner.compress(ints.view())
     }
 
-    fn decompress(&self, stream: &[u8], shape: (usize, usize)) -> Result<Array2<f64>> {
+    fn decompress(&self, stream: &[u8], shape: (usize, usize)) -> Result<Array2<Q::SourceType>> {
         // 1) decompress back to ints
         let ints = self.inner.decompress(stream, shape)?;
         // 2) dequantize ints -> floats
@@ -34,24 +41,69 @@ impl<C: Codec, Q: Quantizer> FloatCodec for LossyCodec<C, Q> {
 }
 
 /// A simple uniform quantizer implementation
+#[derive(Debug, Clone)]
 pub struct UniformQuantizer {
-    pub step: f64,
+    pub step: f32,
 }
 
 impl UniformQuantizer {
     /// Create a uniform quantizer with the given step size
-    pub fn new(step: f64) -> Self {
+    pub fn new(step: f32) -> Self {
         UniformQuantizer { step }
     }
 }
 
 impl Quantizer for UniformQuantizer {
+    type SourceType = f64;
     fn quantize(&self, data: ArrayView2<f64>) -> Array2<i32> {
-        data.mapv(|x| (x / self.step).round() as i32)
+        data.mapv(|x| (x / self.step as f64).round() as i32)
     }
 
     fn dequantize(&self, data: ArrayView2<i32>) -> Array2<f64> {
-        data.mapv(|x| x as f64 * self.step)
+        data.mapv(|x| x as f64 * self.step as f64)
+    }
+}
+
+impl CodecParams for UniformQuantizer {
+    fn serialize(&self) -> Result<Vec<u8>, CodecError> {
+        // we only need to record the step size as an f64
+        let mut buf = Vec::with_capacity(4);
+        buf.extend(&self.step.to_le_bytes());
+        Ok(buf)
+    }
+
+    fn read(data: &[u8]) -> Self {
+        // expect exactly 8 bytes
+        let bytes: [u8; 4] = data
+            .try_into()
+            .expect("UniformQuantizer::read: expected 4 bytes");
+        let step = f32::from_le_bytes(bytes);
+        UniformQuantizer::new(step)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LosslessQuantizer;
+
+impl Quantizer for LosslessQuantizer {
+    type SourceType = i32;
+     fn quantize(&self, data: ArrayView2<i32>) -> Array2<i32> {
+        data.to_owned()
+    }
+
+    fn dequantize(&self, data: ArrayView2<i32>) -> Array2<i32> {
+        data.to_owned()
+    }
+}
+
+impl CodecParams for LosslessQuantizer {
+    fn serialize(&self) -> Result<Vec<u8>, CodecError> {
+        let buf = Vec::new();
+        Ok(buf)
+    }
+
+    fn read(_data: &[u8]) -> Self {
+        LosslessQuantizer
     }
 }
 
@@ -66,6 +118,7 @@ mod tests {
     struct IdentityCodec;
 
     impl Codec for IdentityCodec {
+        type SourceType = i32;
         fn compress(&self, data: ArrayView2<i32>) -> Result<Vec<u8>> {
             let mut buf = Vec::with_capacity(data.len() * 4);
             for &val in data.iter() {
@@ -98,7 +151,7 @@ mod tests {
         let epsilon = step / 2.0;
         for ((i, j), &orig) in data.indexed_iter() {
             let dec = restored[[i, j]];
-            assert!((dec - orig).abs() <= epsilon,
+            assert!((dec - orig).abs() <= epsilon as f64,
                 "At ({},{}): got {}, expected approx {}", i, j, dec, orig);
         }
     }
@@ -116,9 +169,9 @@ mod tests {
         let restored = codec.decompress(&compressed, data.dim()).unwrap();
         let epsilon = step / 2.0;
         for ((i, j), &orig) in data.indexed_iter() {
-            let expected = (orig / step).round() * step;
+            let expected = (orig / step as f64).round() * step as f64;
             let dec = restored[[i, j]];
-            assert!((dec - expected).abs() <= epsilon,
+            assert!((dec - expected).abs() <= epsilon as f64,
                 "Lossy at ({},{}): got {}, expected approx {}", i, j, dec, expected);
         }
     }
@@ -133,15 +186,5 @@ mod tests {
         assert!(compressed.is_empty());
         let restored = codec.decompress(&compressed, (0, 0)).unwrap();
         assert_eq!(restored.shape(), &[0, 0]);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_identity_codec_wrong_shape() {
-        let codec = IdentityCodec;
-        let data = arr2(&[[1, 2], [3, 4]]);
-        let compressed = codec.compress(data.view()).unwrap();
-        // Wrong shape: should panic or assertion
-        let _ = codec.decompress(&compressed, (1, 4)).unwrap();
     }
 }

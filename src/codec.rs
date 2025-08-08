@@ -8,18 +8,21 @@ mod params;
 mod common;
 mod lossless;
 mod lossy;
+mod dascoder;
 
 pub use lossless::LosslessCodec;
 pub use params::CompressParams;
-pub use lossy::{LossyCodec, UniformQuantizer};
+pub use lossy::{LossyCodec, UniformQuantizer, LosslessQuantizer};
+pub use dascoder::DASCoder;
 
 
 pub trait Codec: Send + Sync {
+    type SourceType: Copy + 'static;
     /// Compress the full 2-D data array into one byte-stream.
-    fn compress(&self, data: ArrayView2<i32>) -> Result<Vec<u8>>;
+    fn compress(&self, data: ArrayView2<Self::SourceType>) -> Result<Vec<u8>>;
 
     /// Decompress `stream` back to an `Array2<i32>` of shape `shape`.
-    fn decompress(&self, stream: &[u8], shape: (usize, usize)) -> Result<Array2<i32>>;
+    fn decompress(&self, stream: &[u8], shape: (usize, usize)) -> Result<Array2<Self::SourceType>>;
 }
 
 
@@ -27,6 +30,7 @@ pub trait Codec: Send + Sync {
 #[derive(Debug)]
 pub enum CodecError {
     IntConversion(std::num::TryFromIntError),
+    Other(anyhow::Error), 
 }
 
 impl From<std::num::TryFromIntError> for CodecError {
@@ -34,6 +38,13 @@ impl From<std::num::TryFromIntError> for CodecError {
         CodecError::IntConversion(err)
     }
 }
+
+impl From<anyhow::Error> for CodecError { 
+    fn from(err: anyhow::Error) -> Self {
+        CodecError::Other(err)
+    }
+}
+
 
 /// Trait for codec parameters: must be serializable to bytes and readable from bytes
 pub trait CodecParams: Send + Sync {
@@ -47,18 +58,10 @@ pub trait CodecParams: Send + Sync {
 
 /// Quantizer: maps between f64 data and integer representations
 pub trait Quantizer: Send + Sync {
+    type SourceType: Copy + 'static;
     /// Convert a view of f64 data into i32 values
-    fn quantize(&self, data: ArrayView2<f64>) -> Array2<i32>;
+    fn quantize(&self, data: ArrayView2<Self::SourceType>) -> Array2<i32>;
     /// Convert a view of i32 data back into f64 values
-    fn dequantize(&self, data: ArrayView2<i32>) -> Array2<f64>;
-}
-
-/// Float-based codec interface: works directly with f64 data
-pub trait FloatCodec: Send + Sync {
-    /// Compress the full 2-D data array into one byte-stream.
-    fn compress(&self, data: ArrayView2<f64>) -> Result<Vec<u8>>;
-
-    /// Decompress `stream` back to an `Array2<f64>` of shape `shape`.
-    fn decompress(&self, stream: &[u8], shape: (usize, usize)) -> Result<Array2<f64>>;
+    fn dequantize(&self, data: ArrayView2<i32>) -> Array2<Self::SourceType>;
 }
 
