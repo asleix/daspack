@@ -5,10 +5,16 @@ use ndarray::{Array2, Axis};
 use std::io::{Cursor, Read};
 
 pub mod golomb_rice;
-// mod fast_models;
-// mod mu_law_quant;
-// mod ans_tables;
-// pub mod coders;
+#[cfg(feature = "extentropy")]
+pub mod fast_models;
+#[cfg(feature = "extentropy")]
+pub mod mu_law_quant;
+#[cfg(feature = "extentropy")]
+pub mod ans_tables;
+#[cfg(feature = "extentropy")]
+pub mod coders;
+#[cfg(feature = "extentropy")]
+pub mod exp_golomb;
 
 
 
