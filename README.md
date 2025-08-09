@@ -46,7 +46,7 @@ from daspack import DASCoder, Quantizer
 data = np.random.randint(-1000, 1000, size=(4096, 8192), dtype=np.int32)
 coder = DASCoder(threads=4)
 
-# Encode with Lossless quantizer
+# Encode in Lossless mode
 stream = coder.encode(
     data,
     Quantizer.Lossless(),
@@ -119,31 +119,16 @@ Restored data:
 
 ---
 
-## 🧩 API reference
 
-### `daspack.get_filter()`
-
-Returns the integer *33 000* required by HDF5 to tag the dataset. Call once and reuse.
-
-### Python helpers
-
-```python
-import daspack
-bitstream = daspack.compress_data(array_2d_int32)  # → 1‑D uint8 buffer
-restored  = daspack.decompress_data(bitstream, array_2d_int32.shape)
-```
-
-Both helpers are thin wrappers around the Rust core; they allocate NumPy arrays and copy no data inside the Rust/Python boundary.
-
----
-
-## ⚙️ How it works (one‑liner)
+## ⚙️ How it works
 
 ```
 (float mode) Quantize → Wavelet (5/3) → 2-D LPC → Arithmetic coding
 (int mode)   Identity  → Wavelet (5/3) → 2-D LPC → Arithmetic coding
 ```
 The lossy path is bounded-error thanks to uniform quantization; the rest of the chain is perfectly reversible.
+
+Read the paper (see citation below!) for more information 😄
 
 
 ---
