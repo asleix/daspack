@@ -1,6 +1,92 @@
+# daspack/compute.pyi
+from __future__ import annotations
+
 import numpy as np
 import numpy.typing as npt
-from typing import Tuple, List
+from typing import Literal, Tuple, Union, List
+from numpy.typing import NDArray
+
+__all__ = ["DASCoder", "Quantizer"]
+# daspack.pyi
+
+class Quantizer:
+    """
+    Quantizer type for encoding DASPack streams.
+
+    Parameters
+    ----------
+    Uniform : step : float
+        Uniform scalar quantizer with given step size (float64 arrays).
+    Lossless : None
+        Lossless quantizer for integer arrays (int32).
+    """
+
+    @staticmethod
+    def Uniform(step: float) -> Quantizer: ...
+    @staticmethod
+    def Lossless() -> Quantizer: ...
+
+class DASCoder:
+    """
+    High-level encoder/decoder for DASPack bitstreams.
+
+    Parameters
+    ----------
+    threads : int, default=1
+        Number of threads to use for compression/decompression.
+    """
+
+    def __init__(self, threads: int = 1) -> None: ...
+    def encode(
+        self,
+        data: np.ndarray,
+        quantizer: Quantizer,
+        blocksize: Tuple[int, int] = (1000, 1000),
+        levels: int = 1,
+        order: int = 1,
+    ) -> bytes:
+        """
+        Encode a 2D NumPy array to a DASPack stream.
+
+        Parameters
+        ----------
+        data : ndarray
+            2D array to encode.
+            Must be float64 for Uniform, int32 for Lossless.
+        quantizer : Quantizer
+            Quantizer to use (Uniform or Lossless).
+        blocksize : (int, int), default=(1000, 1000)
+            Compression block size.
+        levels : int, default=1
+            Predictor levels in both dimensions.
+        order : int, default=1
+            Prediction order.
+
+        Returns
+        -------
+        bytes
+            Encoded DASPack stream.
+        """
+        ...
+
+    def decode(self, stream: bytes) -> np.ndarray:
+        """
+        Decode a DASPack stream into a NumPy array.
+
+        The array dtype is inferred from the bitstream:
+        float64 for Uniform quantizer, int32 for Lossless.
+
+        Parameters
+        ----------
+        stream : bytes
+            Encoded DASPack stream.
+
+        Returns
+        -------
+        ndarray
+            2D NumPy array with shape and dtype restored from the stream.
+        """
+        ...
 
 def fwd_dwt_txfm_2d(data: npt.NDArray[np.int32]) -> npt.NDArray[np.int32]:
     """

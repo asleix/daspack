@@ -13,7 +13,7 @@ mod dascoder;
 pub use lossless::LosslessCodec;
 pub use params::CompressParams;
 pub use lossy::{LossyCodec, UniformQuantizer, LosslessQuantizer};
-pub use dascoder::DASCoder;
+pub use dascoder::{DASCoder, Decoded};
 
 
 pub trait Codec: Send + Sync {
@@ -25,12 +25,15 @@ pub trait Codec: Send + Sync {
     fn decompress(&self, stream: &[u8], shape: (usize, usize)) -> Result<Array2<Self::SourceType>>;
 }
 
-
 /// Error type for codec serialization failures
 #[derive(Debug)]
 pub enum CodecError {
+    /// Failed integer cast (e.g., length/offset math)
     IntConversion(std::num::TryFromIntError),
-    Other(anyhow::Error), 
+    /// Problems with the container/bitstream layout (magic, version, sizes…)
+    Format(String),
+    /// Anything else bubbled up via anyhow
+    Other(anyhow::Error),
 }
 
 impl From<std::num::TryFromIntError> for CodecError {
@@ -39,11 +42,49 @@ impl From<std::num::TryFromIntError> for CodecError {
     }
 }
 
-impl From<anyhow::Error> for CodecError { 
+impl From<anyhow::Error> for CodecError {
     fn from(err: anyhow::Error) -> Self {
         CodecError::Other(err)
     }
 }
+
+// Quality-of-life: let you write `?` on io ops or use string literals.
+impl From<std::io::Error> for CodecError {
+    fn from(err: std::io::Error) -> Self {
+        CodecError::Other(err.into())
+    }
+}
+impl From<&'static str> for CodecError {
+    fn from(msg: &'static str) -> Self {
+        CodecError::Format(msg.to_string())
+    }
+}
+impl From<String> for CodecError {
+    fn from(msg: String) -> Self {
+        CodecError::Format(msg)
+    }
+}
+
+impl std::fmt::Display for CodecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CodecError::IntConversion(e) => write!(f, "Integer conversion error: {}", e),
+            CodecError::Format(msg)      => write!(f, "Format error: {}", msg),
+            CodecError::Other(e)         => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for CodecError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CodecError::IntConversion(e) => Some(e),
+            CodecError::Format(_)        => None,
+            CodecError::Other(e)         => Some(e.as_ref()),
+        }
+    }
+}
+
 
 
 /// Trait for codec parameters: must be serializable to bytes and readable from bytes

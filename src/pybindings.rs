@@ -2,12 +2,124 @@
 use numpy::ndarray::{Array1, Array2};
 use pyo3::{pymodule, types::PyModule, PyResult, Python, Bound};
 
-use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
+use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 
 use crate::core::wavelets;
 use crate::core::entropy;
-use crate::core::prediction;
-use crate::codec;
+
+use pyo3::prelude::*;
+use pyo3::exceptions::PyValueError;
+use pyo3::types::{PyBytes};
+use numpy::{IntoPyArray};
+use crate::{DASCoder, CompressParams, UniformQuantizer, LosslessQuantizer};
+use crate::codec::Decoded;
+// Keep exposing this enum to Python as before:
+//   Quantizer.Uniform(step=0.5) or Quantizer.Lossless()
+#[pyclass]
+#[derive(Clone)]
+pub enum Quantizer {
+    #[pyo3(name = "Uniform")]
+    Uniform { step: f32 },
+    #[pyo3(name = "Lossless")]
+    Lossless(),
+}
+
+#[pyclass(name = "DASCoder")]
+pub struct PyDASCoder {
+    threads: usize,
+}
+
+#[pymethods]
+impl PyDASCoder {
+    /// Create a new packer with a given number of threads.
+    #[new]
+    #[pyo3(signature = (threads=1))]
+    fn new(threads: usize) -> PyResult<Self> {
+        Ok(PyDASCoder { threads })
+    }
+
+    /// Encode a 2D array using DASPack.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : np.ndarray
+    ///     float64 for Quantizer.Uniform, int32 for Quantizer.Lossless
+    /// quantizer : Quantizer
+    /// blocksize : (int, int), default (1000, 1000)
+    /// levels : int, default 1
+    /// order : int, default 1
+    ///
+    /// Returns
+    /// -------
+    /// bytes
+    #[pyo3(signature = (data, quantizer, blocksize=(1000, 1000), levels=1, order=1))]
+    fn encode<'py>(
+        &self,
+        py: Python<'py>,
+        data: PyObject,
+        quantizer: Quantizer,
+        blocksize: (usize, usize),
+        levels: usize,
+        order: usize,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let (block_h, block_w) = blocksize;
+        let params = CompressParams::new(block_h, block_w, levels, levels, order);
+
+        match quantizer {
+            Quantizer::Uniform { step } => {
+                // Expect float64 array
+                let arr = data
+                    .extract::<PyReadonlyArray2<f64>>(py)
+                    .map_err(|_| PyValueError::new_err("Expected float64 2D array for Uniform quantizer"))?;
+                let quant = UniformQuantizer::new(step);
+                let packer = DASCoder::<UniformQuantizer>::with_threads(self.threads);
+                let bytes = packer
+                    .encode(arr.as_array().view(), &quant, &params)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                Ok(PyBytes::new(py, &bytes))
+            }
+            Quantizer::Lossless() => {
+                // Expect int32 array
+                let arr = data
+                    .extract::<PyReadonlyArray2<i32>>(py)
+                    .map_err(|_| PyValueError::new_err("Expected int32 2D array for Lossless quantizer"))?;
+                let quant = LosslessQuantizer;
+                let packer = DASCoder::<LosslessQuantizer>::with_threads(self.threads);
+                let bytes = packer
+                    .encode(arr.as_array().view(), &quant, &params)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                Ok(PyBytes::new(py, &bytes))
+            }
+        }
+    }
+
+    /// Decode a DASPack stream into a 2D numpy array (dtype inferred from bitstream).
+    ///
+    /// Returns
+    /// -------
+    /// np.ndarray
+    ///     float64 for Uniform streams, int32 for Lossless streams.
+    #[pyo3(text_signature = "(stream)")]
+    fn decode<'py>(&self, py: Python<'py>, stream: &[u8]) -> PyResult<Bound<'py, PyAny>>  {
+        // Any concrete Q works; decode_auto branches by header tag.
+        let packer = DASCoder::<UniformQuantizer>::with_threads(self.threads);
+        match packer
+            .decode_auto(stream)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+        {
+            Decoded::F64(arr) => {
+            let pyarr = arr.into_pyarray(py);      
+            Ok(pyarr.as_any().clone())
+        }
+            Decoded::I32(arr) => {
+            let pyarr = arr.into_pyarray(py); 
+            Ok(pyarr.as_any().clone())
+        }
+        }
+    }
+}
+
+
 
 
 
@@ -15,6 +127,9 @@ use crate::codec;
 // #[allow(non_snake_case)]
 #[pymodule]
 fn compute<'py>(_py: Python<'py>, m: &Bound<'py, PyModule>) -> PyResult<()> {
+    m.add_class::<PyDASCoder>()?;
+    m.add_class::<Quantizer>()?;
+
     /// Wavelet Transforms
     #[pyfn(m)]
     #[pyo3(name = "fwd_dwt_txfm_1d")]

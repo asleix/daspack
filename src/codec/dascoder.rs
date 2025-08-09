@@ -14,6 +14,8 @@ use super::{
     Quantizer,
 };
 
+use super::lossy::{QuantMeta, QuantKind, LosslessQuantizer, UniformQuantizer};
+
 /// High-level packer/unpacker for DASPack bitstreams.
 /// 
 /// Parameterized on your Quantizer type `Q`, which must
@@ -29,7 +31,7 @@ where
 
 impl<Q> DASCoder<Q>
 where
-    Q: Quantizer + CodecParams + Clone,
+    Q: Quantizer + CodecParams + QuantMeta + Clone,
 {
     /// Create a new packer that will always configure the
     /// lossless backend to use exactly `threads` threads.
@@ -73,6 +75,10 @@ where
         out.push(1);                          // version
         out.extend(&(params_bytes.len() as u32).to_le_bytes());
         out.extend(&params_bytes);
+
+        // write quantizer kind
+        out.push(Q::KIND as u8);
+
         out.extend(&(quant_bytes.len()  as u32).to_le_bytes());
         out.extend(&quant_bytes);
         out.extend(&(h as u32).to_le_bytes());
@@ -87,13 +93,17 @@ where
     /// All header fields (params, quantizer, shape) are read
     /// from the stream; we re-create the `LosslessCodec` with
     /// the same thread count as on the encoder side.
-    pub fn decode(&self, stream: &[u8]) -> Result<Array2<Q::SourceType>> {
+    pub fn decode(&self, stream: &[u8]) -> Result<Array2<Q::SourceType>, CodecError> {
         let mut off = 0;
 
-        debug_assert_eq!(&stream[off..off + 4], b"DASP", "invalid magic");
+        if stream.len() < 5 || &stream[off..off + 4] != b"DASP" {
+            return Err(CodecError::Format("invalid magic".into()));
+        }
         off += 4;
         let ver = stream[off]; off += 1;
-        debug_assert_eq!(ver, 1, "unsupported version");
+        if ver != 1 {
+            return Err(CodecError::Format(format!("unsupported version: {}", ver)));
+        }
 
         // read params
         let p_len = u32::from_le_bytes(stream[off..off + 4].try_into().unwrap()) as usize;
@@ -101,6 +111,18 @@ where
         let p_bytes = &stream[off..off + p_len];
         off += p_len;
         let params = CompressParams::read(p_bytes);
+
+        // quantizer kind
+        let qkind = QuantKind::from_byte(stream[off])
+            .ok_or_else(|| CodecError::Format("unknown quantizer kind".into()))?;
+        off += 1;
+
+        if qkind != Q::KIND {
+            return Err(CodecError::Format(format!(
+               "quantizer kind mismatch: stream={:?} but decoder expects {:?}",
+                qkind, Q::KIND
+            )));
+        }
 
         // read quantizer params
         let q_len = u32::from_le_bytes(stream[off..off + 4].try_into().unwrap()) as usize;
@@ -123,9 +145,72 @@ where
         // rebuild and run the codec
         let lossless = LosslessCodec::with_threads(params.clone(), self.threads)?;
         let lossy = LossyCodec::new(lossless, quantizer);
-        lossy.decompress(body, (h, w))
+        let out = lossy.decompress(body, (h, w))?; 
+        Ok(out)
     }
 }
+
+pub enum Decoded {
+    F64(Array2<f64>),
+    I32(Array2<i32>),
+}
+
+impl<Q> DASCoder<Q>
+where
+    Q: Quantizer + CodecParams + Clone, // (generic path still allowed)
+{
+    pub fn decode_auto(&self, stream: &[u8]) -> Result<Decoded, CodecError> {
+        let mut off = 0;
+
+        // magic + version
+        if &stream[off..off+4] != b"DASP" { return Err(CodecError::Format("bad magic".into())); }
+        off += 4;
+        let ver = stream[off]; off += 1;
+        if ver != 1 { return Err(CodecError::Format("unsupported version".into())); }
+
+        // params
+        let p_len = u32::from_le_bytes(stream[off..off+4].try_into().unwrap()) as usize; off += 4;
+        let p_bytes = &stream[off..off+p_len]; off += p_len;
+        let params = CompressParams::read(p_bytes);
+
+        // NEW: quantizer kind
+        let qkind = QuantKind::from_byte(stream[off])
+            .ok_or_else(|| CodecError::Format("unknown quantizer kind".into()))?;
+        off += 1;
+
+        // quantizer blob
+        let q_len = u32::from_le_bytes(stream[off..off+4].try_into().unwrap()) as usize; off += 4;
+        let q_bytes = &stream[off..off+q_len]; off += q_len;
+
+        // shape
+        let h = u32::from_le_bytes(stream[off..off+4].try_into().unwrap()) as usize; off += 4;
+        let w = u32::from_le_bytes(stream[off..off+4].try_into().unwrap()) as usize; off += 4;
+
+        // payload
+        let b_len = u32::from_le_bytes(stream[off..off+4].try_into().unwrap()) as usize; off += 4;
+        let body = &stream[off..off+b_len];
+
+        // rebuild lossless backend
+        let lossless = LosslessCodec::with_threads(params.clone(), self.threads)?;
+
+        // Branch on quantizer kind and run the right lossy adapter.
+        match qkind {
+            QuantKind::Uniform => {
+                let q = UniformQuantizer::read(q_bytes);
+                let lossy = LossyCodec::new(lossless, q);
+                let arr = lossy.decompress(body, (h, w))?;
+                Ok(Decoded::F64(arr))
+            }
+            QuantKind::Lossless => {
+                let q = LosslessQuantizer::read(q_bytes);
+                let lossy = LossyCodec::new(lossless, q);
+                let arr = lossy.decompress(body, (h, w))?;
+                Ok(Decoded::I32(arr))
+            }
+        }
+    }
+}
+
 
 
 // Add these tests to the bottom of your `daspacker.rs`
@@ -277,5 +362,34 @@ mod lossless_roundtrip_tests {
     #[test]
     fn lossless_roundtrip_large_multi_thread() {
         verify_lossless_roundtrip(8, (128, 64), -1000..1000);
+    }
+
+
+    #[test]
+    fn auto_decode_uniform() {
+        let packer = DASCoder::<UniformQuantizer>::with_threads(2);
+        let data = Array2::from_shape_fn((4,4), |(i,j)| (i as f64) + (j as f64)/10.0);
+        let q = UniformQuantizer::new(0.5);
+        let p = CompressParams::new(2,2,1,1,2);
+        let bytes = packer.encode(data.view(), &q, &p).unwrap();
+
+        match packer.decode_auto(&bytes).unwrap() {
+            Decoded::F64(arr) => assert_eq!(arr.dim(), (4,4)),
+            _ => panic!("expected F64"),
+        }
+    }
+
+    #[test]
+    fn auto_decode_lossless() {
+        let packer = DASCoder::<LosslessQuantizer>::with_threads(2);
+        let data = Array2::from_shape_fn((3,5), |(i,j)| (i as i32) - (j as i32));
+        let q = LosslessQuantizer;
+        let p = CompressParams::new(3,5,0,0,0);
+        let bytes = packer.encode(data.view(), &q, &p).unwrap();
+
+        match packer.decode_auto(&bytes).unwrap() {
+            Decoded::I32(arr) => assert_eq!(arr, data),
+            _ => panic!("expected I32"),
+        }
     }
 }

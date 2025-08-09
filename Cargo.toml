@@ -16,9 +16,9 @@ extentropy = ["constriction", "once_cell", "libm"]
 
 
 [dependencies]
-pyo3 = { version = "0.23.5", features = ["extension-module"], optional = true}
+pyo3 = { version = "0.25.1", features = ["extension-module"], optional = true}
 ndarray = {version = "0.16.1", features = ["rayon"]}
-numpy = {version = "0.23", optional = true}
+numpy = {version = "0.25", optional = true}
 byteorder = "1.5.0"
 rayon = "1.10.0"
 anyhow = "1.0.98"

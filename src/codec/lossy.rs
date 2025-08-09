@@ -108,6 +108,31 @@ impl CodecParams for LosslessQuantizer {
 }
 
 
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum QuantKind {
+    Uniform  = 1,
+    Lossless = 2,
+}
+
+impl QuantKind {
+    pub fn from_byte(b: u8) -> Option<Self> {
+        match b {
+            1 => Some(QuantKind::Uniform),
+            2 => Some(QuantKind::Lossless),
+            _ => None,
+        }
+    }
+}
+
+pub trait QuantMeta {
+    const KIND: QuantKind;
+}
+
+impl QuantMeta for UniformQuantizer  { const KIND: QuantKind = QuantKind::Uniform; }
+impl QuantMeta for LosslessQuantizer { const KIND: QuantKind = QuantKind::Lossless; }
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
