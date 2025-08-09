@@ -4,19 +4,23 @@
 
 # DASPack: Controlled data compression for Distributed Acoustic Sensing
 
-DASPack is a fast, open‑source compressor that lets you store huge Distributed Acoustic Sensing (DAS) datasets **losslessly** or with a user‑defined, fixed reconstruction error. It couples wavelets, linear predictive coding and arithmetic coding in Rust, and plugs straight into the HDF5 pipeline so you can write compressed datasets with a single `h5py` call.
+DASPack is a fast, open-source compressor for huge Distributed Acoustic Sensing (DAS) datasets.  
+It supports **lossless** and **fixed-accuracy lossy** modes, letting you store data with an exact bound on reconstruction error.
 
-Disclaimer. The final implementation is still being polished. An official release is expected by mid-august.
+The core is written in Rust for speed and safety, with a thin Python API for convenient integration into your workflows.
+
+**DISCLAIMER:** We are testing the code, official release will be by mid-august.
 
 ---
 
 ## ✨ Highlights
 
-- **Fixed‑accuracy**: pick an absolute error (including zero) and know exactly what you lose.
-- **Real‑time throughput**: ≥ 800 MB s⁻¹ on an 8‑core laptop.
-- **Seamless HDF5**: available as filter *33 000*; works with `h5py`, `h5netcdf`, MATLAB, …
-- **Safe & portable**: core written in Rust, no unsafe C buffers in user code.
-- **Python bindings**: one‑line `compress_data` / `decompress_data` helpers for quick prototyping.
+- **Lossless or fixed-accuracy** — pick zero error or a max absolute error and get exactly what you asked for.
+- **Multi-threaded** — control the number of threads per encode/decode call.
+- **High throughput** — 800 MB/s+ on an 8-core laptop in typical workloads.
+- **Self-describing streams** — all parameters (codec, quantizer, shape) are stored in the bitstream; no sidecars needed.
+- **Pure Rust core** — no unsafe C buffers exposed to user code.
+- **Python bindings** — direct `encode` / `decode` interface for NumPy arrays.
 
 ---
 
@@ -25,50 +29,93 @@ Disclaimer. The final implementation is still being polished. An official releas
 ### 1. Install (Python ≥ 3.9)
 
 ```bash
-pip install daspack               # pre‑built wheels for Linux/macOS x86_64 & Apple Silicon
-# or, from source:
-# cargo install --path .          # Rust toolchain ≥ 1.74 required
+pip install daspack
+# or, from source (Rust ≥ 1.74):
+# maturin develop --release
 ```
 
-### 2. Write compressed data
+### 2. Encode and store with h5py
+
+You can store the compressed DASPack bitstream as raw bytes in HDF5:
 
 ```python
-import numpy as np, h5py, daspack
+import numpy as np, h5py
+from daspack import DASCoder, Quantizer
 
-data   = np.random.randint(-1000, 1000, size=(4096, 8192), dtype=np.int32)
-fname  = "example.h5"
-b_side = 1024   # block height & width
-wav    = 1    # one wavelet level in time & space
-lpc    = 2    # 2‑tap linear predictor
+# Example: lossless compression with 4 threads
+data = np.random.randint(-1000, 1000, size=(4096, 8192), dtype=np.int32)
+coder = DASCoder(threads=4)
 
-with h5py.File(fname, "w") as f:
-    f.create_dataset(
-        name="data",
-        data=data,
-        chunks=data.shape,         # one chunk per tile (tune as needed)
-        dtype=np.int32,
-        compression=daspack.get_filter(),
-        compression_opts=(
-            b_side,  # block_height
-            b_side,  # block_width
-            wav,     # lx (space levels)
-            wav,     # lt (time levels)
-            lpc,     # lpc_order
-            250,     # tailcut ‰  (leave default)
-        ),
-    )
+# Encode with Lossless quantizer
+stream = coder.encode(
+    data,
+    Quantizer.Lossless(),
+    blocksize=(1024, 1024),
+    levels=0,
+    order=0,
+)
+
+with h5py.File("example.h5", "w") as f:
+    f.create_dataset("compressed", data=np.frombuffer(stream, dtype=np.uint8))
 ```
 
-### 3. Read it back
+### 3. Read and decode
 
 ```python
-import h5py, daspack # needed to properly load the hdf5 decompressor
+import numpy as np, h5py
+from daspack import DASCoder
 
-with h5py.File(fname) as f:
-    x = f["data"][:]
+coder = DASCoder(threads=4)
+
+with h5py.File("example.h5") as f:
+    raw = f["compressed"][:].tobytes()
+
+# Decode: dtype is inferred from the stream
+restored = coder.decode(raw)
 ```
 
-The filter is self‑describing: readers that do not know DASPack will ignore it and still access the raw bytes (just without decompression).
+
+### 4. Lossy example with fixed error bound
+
+```python
+import numpy as np
+from daspack import DASCoder, Quantizer
+
+# Generate some example data
+data = np.random.uniform(-100, 100, size=(6, 8)).astype(np.float64)
+
+coder = DASCoder(threads=2)
+
+# Target: absolute error ≤ step/2
+step = 0.5
+
+# Encode with Uniform quantizer (lossy) and given step
+stream = coder.encode(
+    data,
+    Quantizer.Uniform(step=step),
+)
+
+# Decode (dtype inferred from stream)
+restored = coder.decode(stream)
+
+# Verify bound
+tol = step / 2 + 1e-12
+max_err = np.max(np.abs(restored - data))
+print(f"Max abs error: {max_err:.6f} (tolerance {tol})")
+assert max_err <= tol
+
+print("Original data:\n", data)
+print("Restored data:\n", restored)
+```
+
+The expected output is
+```
+Max abs error: 0.250000 (tolerance 0.250000)
+Original data:
+ [[ ... ]]
+Restored data:
+ [[ ... ]]
+```
 
 ---
 
@@ -93,10 +140,11 @@ Both helpers are thin wrappers around the Rust core; they allocate NumPy arrays 
 ## ⚙️ How it works (one‑liner)
 
 ```
-Rounding to ints → Wavelet (5/3) and 2‑D LPC → Arithmetic coding
+(float mode) Quantize → Wavelet (5/3) → 2-D LPC → Arithmetic coding
+(int mode)   Identity  → Wavelet (5/3) → 2-D LPC → Arithmetic coding
 ```
+The lossy path is bounded-error thanks to uniform quantization; the rest of the chain is perfectly reversible.
 
-Everything except the initial rounding is perfectly reversible. See the [paper](docs/about.md) for a deep dive.
 
 ---
 
@@ -108,7 +156,8 @@ DASPack is released under the 3-Clause BSD License.
 
 ## 🤝 Contributing
 
-Bug reports and pull requests are welcome! Please open an issue first if you plan a large change so we can discuss it.
+Bug reports and pull requests are welcome.
+If you plan a large change, please open an issue first so we can discuss the design.
 
 ---
 
