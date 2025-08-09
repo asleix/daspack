@@ -1,5 +1,5 @@
 [project]
-name = "daspack"
+name = "daspack-dev"
 classifiers = [
   "Programming Language :: Rust",
   "Programming Language :: Python :: 3",
@@ -12,7 +12,7 @@ classifiers = [
   "Topic :: System :: Archiving :: Compression",
   "Intended Audience :: Science/Research",
 ]
-version = "0.0.1"
+version = "0.0.1a0"
 description = "DASPack: Controlled data compression for Distributed Acoustic Sensing"
 readme = "README.md"
 requires-python = ">=3.8"

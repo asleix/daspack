@@ -29,7 +29,7 @@ The core is written in Rust for speed and safety, with a thin Python API for con
 ### 1. Install (Python ≥ 3.9)
 
 ```bash
-pip install daspack
+pip install daspack-dev
 # or, from source (Rust ≥ 1.74):
 # maturin develop --release
 ```
