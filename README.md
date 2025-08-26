@@ -18,7 +18,6 @@ We’re continuously improving the code to serve everyone better. Feel free to s
 - **Lossless or fixed-accuracy** — pick zero error or a max absolute error and get exactly what you asked for.
 - **Multi-threaded** — control the number of threads per encode/decode call.
 - **High throughput** — 800 MB/s+ on an 8-core laptop in typical workloads.
-- **Self-describing streams** — all parameters (codec, quantizer, shape) are stored in the bitstream; no sidecars needed.
 - **Pure Rust core** — no unsafe C buffers exposed to user code.
 - **Python bindings** — direct `encode` / `decode` interface for NumPy arrays.
 
@@ -127,15 +126,13 @@ The lossy path is bounded-error thanks to uniform quantization; the rest of the 
 
 Read the paper (see citation below!) for more information 😄
 
-## ⚙️ Parameters at a glance
+### Parameters at a glance
 
 - **threads** *(int, default=1)* — number of threads for compression/decompression.
 - **quantizer** *(Quantizer)* — choose `Lossless()` or `Uniform(step=...)`.
 - **blocksize** *((int, int), default=(1000, 1000))* — 2D block size used for compression.
 - **levels** *(int, default=1)* — predictor levels across dimensions.
 - **order** *(int, default=1)* — prediction order.
-
-
 
 ---
 
