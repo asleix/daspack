@@ -56,7 +56,27 @@ impl UniformQuantizer {
 impl Quantizer for UniformQuantizer {
     type SourceType = f64;
     fn quantize(&self, data: ArrayView2<f64>) -> Array2<i32> {
-        data.mapv(|x| (x / self.step as f64).round() as i32)
+        data.mapv(|x| {
+            let q = (x / self.step as f64).round();
+
+            if q < i32::MIN as f64 {
+                eprintln!(
+                    "Warning: value {} quantized to below i32::MIN, clamping to {}",
+                    q,
+                    i32::MIN
+                );
+                i32::MIN
+            } else if q > i32::MAX as f64 {
+                eprintln!(
+                    "Warning: value {} quantized to above i32::MAX, clamping to {}",
+                    q,
+                    i32::MAX
+                );
+                i32::MAX
+            } else {
+                q as i32
+            }
+        })
     }
 
     fn dequantize(&self, data: ArrayView2<i32>) -> Array2<f64> {
