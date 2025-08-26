@@ -5,11 +5,11 @@
 # DASPack: Controlled data compression for Distributed Acoustic Sensing
 
 DASPack is a fast, open-source compressor for huge Distributed Acoustic Sensing (DAS) datasets.  
-It supports **lossless** and **fixed-accuracy lossy** modes, letting you store data with an exact bound on reconstruction error.
+It supports **lossless** and **fixed-accuracy lossy** modes, letting you store data with an exact bound on reconstruction error. Read the [paper](https://arxiv.org/abs/2507.16390) to find out more!
 
 The core is written in Rust for speed and safety, with a thin Python API for convenient integration into your workflows.
 
-**DISCLAIMER:** We are testing the code, official release will be by mid-august.
+We’re continuously improving the code to serve everyone better. Feel free to share your use cases or report any issues in the [Discussions section](https://github.com/asleix/daspack/discussions)!
 
 ---
 
@@ -50,9 +50,6 @@ coder = DASCoder(threads=4)
 stream = coder.encode(
     data,
     Quantizer.Lossless(),
-    blocksize=(1024, 1024),
-    levels=0,
-    order=0,
 )
 
 with h5py.File("example.h5", "w") as f:
@@ -130,6 +127,15 @@ The lossy path is bounded-error thanks to uniform quantization; the rest of the 
 
 Read the paper (see citation below!) for more information 😄
 
+## ⚙️ Parameters at a glance
+
+- **threads** *(int, default=1)* — number of threads for compression/decompression.
+- **quantizer** *(Quantizer)* — choose `Lossless()` or `Uniform(step=...)`.
+- **blocksize** *((int, int), default=(1000, 1000))* — 2D block size used for compression.
+- **levels** *(int, default=1)* — predictor levels across dimensions.
+- **order** *(int, default=1)* — prediction order.
+
+
 
 ---
 
@@ -150,8 +156,8 @@ If you plan a large change, please open an issue first so we can discuss the des
 
 If you use DASPack in academic work, please cite:
 
-> Seguí, A. *et al.* (2025). **DASPack: Controlled Data Compression for Distributed Acoustic Sensing**. *Geophysical Journal International*.\
-> DOI: *pending*
+> Seguí, A. *et al.* (2025). **DASPack: Controlled Data Compression for Distributed Acoustic Sensing**. *submitted to Geophysical Journal International*.\
+> DOI: arXiv:2507.16390
 
 Thanks for supporting open science!
 
